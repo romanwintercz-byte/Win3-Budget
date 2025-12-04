@@ -2,32 +2,54 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Expense, CategoryType } from '../types';
 import { CATEGORIES } from '../constants';
 
-// Helper function to safely get the API Key in different environments
+// Helper to sanitize the key (remove quotes, whitespace)
+const sanitizeKey = (key: string | undefined): string | undefined => {
+  if (!key) return undefined;
+  const clean = key.replace(/['"]/g, '').trim();
+  return clean.length > 0 ? clean : undefined;
+};
+
+// Robust API Key discovery
 const getApiKey = (): string | undefined => {
-  // 1. Try Vite environment (Standard for Vercel/React deployments)
-  // This must be checked first and explicitly for VITE_API_KEY
+  let key: string | undefined = undefined;
+
+  // 1. Try Vite / Modern Frontend Envs (import.meta.env)
   try {
     // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) {
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
       // @ts-ignore
-      return import.meta.env.VITE_API_KEY;
+      key = import.meta.env.VITE_API_KEY || 
+            // @ts-ignore
+            import.meta.env.REACT_APP_API_KEY || 
+            // @ts-ignore
+            import.meta.env.NEXT_PUBLIC_API_KEY ||
+            // @ts-ignore
+            import.meta.env.API_KEY;
     }
   } catch (e) {
-    // Ignore ReferenceError if import.meta is not available
+    // Ignore access errors
   }
 
-  // 2. Try standard process.env (AI Studio, Webpack)
+  if (sanitizeKey(key)) return sanitizeKey(key);
+
+  // 2. Try Process Env (Node/Webpack/CRA)
   try {
     // @ts-ignore
-    if (typeof process !== 'undefined' && process.env?.API_KEY) {
+    if (typeof process !== 'undefined' && process.env) {
       // @ts-ignore
-      return process.env.API_KEY;
+      key = process.env.VITE_API_KEY || 
+            // @ts-ignore
+            process.env.REACT_APP_API_KEY || 
+            // @ts-ignore
+            process.env.NEXT_PUBLIC_API_KEY || 
+            // @ts-ignore
+            process.env.API_KEY;
     }
   } catch (e) {
-    // Ignore ReferenceError if process is not defined
+    // Ignore access errors
   }
 
-  return undefined;
+  return sanitizeKey(key);
 };
 
 // Lazy initialization helper
@@ -35,11 +57,34 @@ const getGeminiClient = () => {
   const apiKey = getApiKey();
   
   if (!apiKey) {
-    console.error("SmartBudget Error: API Key not found.");
-    throw new Error("API Key missing (VITE_API_KEY)");
+    console.error("SmartBudget Config Error: No valid API Key found in environment variables.");
+    throw new Error("Chybí API klíč. Zkontrolujte nastavení 'VITE_API_KEY' ve Vercelu.");
   }
 
   return new GoogleGenAI({ apiKey: apiKey });
+};
+
+// Helper to parse ugly JSON errors from SDK
+const formatError = (error: any): string => {
+  const msg = error.message || error.toString();
+  
+  // Try to parse JSON error message from Google SDK
+  if (typeof msg === 'string' && msg.includes('{')) {
+    try {
+      // Extract JSON part if mixed with text
+      const jsonStart = msg.indexOf('{');
+      const jsonEnd = msg.lastIndexOf('}');
+      if (jsonStart >= 0 && jsonEnd > jsonStart) {
+        const jsonStr = msg.substring(jsonStart, jsonEnd + 1);
+        const parsed = JSON.parse(jsonStr);
+        if (parsed.error && parsed.error.message) {
+          return `AI Chyba: ${parsed.error.message}`;
+        }
+      }
+    } catch (e) {}
+  }
+  
+  return `Chyba: ${msg}`;
 };
 
 export const analyzeBudget = async (
@@ -84,8 +129,7 @@ export const analyzeBudget = async (
     return response.text || "Nepodařilo se vygenerovat radu.";
   } catch (error: any) {
     console.error("Gemini Analyze Error:", error);
-    // Vracíme přesnou chybu do UI, aby uživatel viděl, co je špatně
-    return `CHYBA AI: ${error.message || error.toString()}`;
+    return formatError(error);
   }
 };
 
@@ -205,7 +249,6 @@ export const processBankStatement = async (
 
   } catch (error: any) {
     console.error("Gemini Parse Error:", error);
-    // Propagace konkrétní chyby
-    throw new Error(`CHYBA AI: ${error.message || error.toString()}`);
+    throw new Error(formatError(error));
   }
 };
