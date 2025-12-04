@@ -2,11 +2,17 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Expense, CategoryType } from '../types';
 import { CATEGORIES } from '../constants';
 
-// Helper to sanitize the key (remove quotes, whitespace)
+// Helper to sanitize the key (remove quotes, whitespace, checks for 'undefined')
 const sanitizeKey = (key: string | undefined): string | undefined => {
   if (!key) return undefined;
-  const clean = key.replace(/['"]/g, '').trim();
-  return clean.length > 0 ? clean : undefined;
+  // Remove all whitespace (including tabs, newlines) and quotes
+  const clean = key.replace(/['"\s]/g, '');
+  
+  // Check for common invalid placeholder values
+  if (clean.length === 0 || clean === 'undefined' || clean === 'null' || clean.includes('YOUR_API_KEY')) {
+    return undefined;
+  }
+  return clean;
 };
 
 // Robust API Key discovery
@@ -57,8 +63,8 @@ const getGeminiClient = () => {
   const apiKey = getApiKey();
   
   if (!apiKey) {
-    console.error("SmartBudget Config Error: No valid API Key found in environment variables.");
-    throw new Error("Chybí API klíč. Zkontrolujte nastavení 'VITE_API_KEY' ve Vercelu.");
+    console.error("SmartBudget Config Error: No valid API Key found. Checked VITE_API_KEY, REACT_APP_API_KEY, NEXT_PUBLIC_API_KEY.");
+    throw new Error("Chybí API klíč. Ve Vercelu v sekci Settings > Environment Variables přidejte 'VITE_API_KEY'.");
   }
 
   return new GoogleGenAI({ apiKey: apiKey });
@@ -71,13 +77,18 @@ const formatError = (error: any): string => {
   // Try to parse JSON error message from Google SDK
   if (typeof msg === 'string' && msg.includes('{')) {
     try {
-      // Extract JSON part if mixed with text
       const jsonStart = msg.indexOf('{');
       const jsonEnd = msg.lastIndexOf('}');
       if (jsonStart >= 0 && jsonEnd > jsonStart) {
         const jsonStr = msg.substring(jsonStart, jsonEnd + 1);
         const parsed = JSON.parse(jsonStr);
-        if (parsed.error && parsed.error.message) {
+        
+        // Handle API_KEY_INVALID specifically
+        if (parsed.error) {
+          const reason = parsed.error.details?.[0]?.reason || parsed.error.status;
+          if (reason === 'API_KEY_INVALID' || parsed.error.code === 400) {
+            return "AI Chyba: Neplatný API klíč. Zkontrolujte v Google Cloud Console, zda nemáte nastavené 'Application restrictions' (IP/Referer), které blokují Vercel.";
+          }
           return `AI Chyba: ${parsed.error.message}`;
         }
       }
