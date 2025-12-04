@@ -36,8 +36,7 @@ const getGeminiClient = () => {
   
   if (!apiKey) {
     console.error("SmartBudget Error: API Key not found.");
-    console.error("Pokud běžíte na Vercelu, ujistěte se, že máte nastavenou proměnnou 'VITE_API_KEY' v Settings > Environment Variables.");
-    throw new Error("API Key missing");
+    throw new Error("API Key missing (VITE_API_KEY)");
   }
 
   return new GoogleGenAI({ apiKey: apiKey });
@@ -85,10 +84,8 @@ export const analyzeBudget = async (
     return response.text || "Nepodařilo se vygenerovat radu.";
   } catch (error: any) {
     console.error("Gemini Analyze Error:", error);
-    if (error.message === "API Key missing") {
-      return "Chyba konfigurace: Chybí API klíč (VITE_API_KEY).";
-    }
-    return "Omlouváme se, AI poradce je momentálně nedostupný.";
+    // Vracíme přesnou chybu do UI, aby uživatel viděl, co je špatně
+    return `CHYBA AI: ${error.message || error.toString()}`;
   }
 };
 
@@ -208,9 +205,7 @@ export const processBankStatement = async (
 
   } catch (error: any) {
     console.error("Gemini Parse Error:", error);
-    if (error.message === "API Key missing") {
-      throw new Error("Chybí API klíč (VITE_API_KEY). Zkontrolujte nastavení Vercel.");
-    }
-    throw new Error("Nepodařilo se zpracovat soubor. Ujistěte se, že je čitelný.");
+    // Propagace konkrétní chyby
+    throw new Error(`CHYBA AI: ${error.message || error.toString()}`);
   }
 };
