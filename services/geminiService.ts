@@ -73,7 +73,9 @@ const getGeminiClient = () => {
 // Helper to parse ugly JSON errors from SDK
 const formatError = (error: any): string => {
   const msg = error.message || error.toString();
-  
+  const apiKey = getApiKey();
+  const keyStatus = apiKey ? `Klíč nalezen (začíná na ${apiKey.substring(0, 4)}...)` : "Klíč NENALEZEN";
+
   // Try to parse JSON error message from Google SDK
   if (typeof msg === 'string' && msg.includes('{')) {
     try {
@@ -87,15 +89,15 @@ const formatError = (error: any): string => {
         if (parsed.error) {
           const reason = parsed.error.details?.[0]?.reason || parsed.error.status;
           if (reason === 'API_KEY_INVALID' || parsed.error.code === 400) {
-            return "AI Chyba: Neplatný API klíč. Zkontrolujte v Google Cloud Console, zda nemáte nastavené 'Application restrictions' (IP/Referer), které blokují Vercel.";
+            return `AI Chyba: Neplatný API klíč. Google ho odmítl. (${keyStatus}). Zkontrolujte v Google Cloud Console 'Application restrictions'.`;
           }
-          return `AI Chyba: ${parsed.error.message}`;
+          return `AI Chyba: ${parsed.error.message} (${keyStatus})`;
         }
       }
     } catch (e) {}
   }
   
-  return `Chyba: ${msg}`;
+  return `Chyba: ${msg} (Diagnostika: ${keyStatus})`;
 };
 
 export const analyzeBudget = async (
